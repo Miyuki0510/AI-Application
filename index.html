@@ -1,359 +1,469 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Play, RotateCcw, Volume2, Trophy, Grid3X3, Languages, Settings, Check, Star } from 'lucide-react';
-
-// --- 資料庫 Data ---
-const VOCAB_DATA = {
-  animals: [
-    { en: 'Cat', cn: '貓' }, { en: 'Dog', cn: '狗' }, { en: 'Elephant', cn: '大象' },
-    { en: 'Lion', cn: '獅子' }, { en: 'Tiger', cn: '老虎' }, { en: 'Bear', cn: '熊' },
-    { en: 'Rabbit', cn: '兔子' }, { en: 'Monkey', cn: '猴子' }, { en: 'Panda', cn: '熊貓' },
-    { en: 'Giraffe', cn: '長頸鹿' }, { en: 'Zebra', cn: '斑馬' }, { en: 'Horse', cn: '馬' },
-    { en: 'Cow', cn: '牛' }, { en: 'Pig', cn: '豬' }, { en: 'Sheep', cn: '綿羊' },
-    { en: 'Chicken', cn: '雞' }, { en: 'Duck', cn: '鴨' }, { en: 'Snake', cn: '蛇' },
-    { en: 'Fish', cn: '魚' }, { en: 'Bird', cn: '鳥' }, { en: 'Turtle', cn: '烏龜' },
-    { en: 'Fox', cn: '狐狸' }, { en: 'Wolf', cn: '狼' }, { en: 'Deer', cn: '鹿' },
-    { en: 'Frog', cn: '青蛙' }, { en: 'Mouse', cn: '老鼠' }, { en: 'Shark', cn: '鯊魚' },
-    { en: 'Whale', cn: '鯨魚' }, { en: 'Penguin', cn: '企鵝' }, { en: 'Koala', cn: '無尾熊' }
-  ],
-  fruits: [
-    { en: 'Apple', cn: '蘋果' }, { en: 'Banana', cn: '香蕉' }, { en: 'Orange', cn: '柳橙' },
-    { en: 'Grape', cn: '葡萄' }, { en: 'Lemon', cn: '檸檬' }, { en: 'Peach', cn: '桃子' },
-    { en: 'Mango', cn: '芒果' }, { en: 'Pineapple', cn: '鳳梨' }, { en: 'Watermelon', cn: '西瓜' },
-    { en: 'Strawberry', cn: '草莓' }, { en: 'Cherry', cn: '櫻桃' }, { en: 'Kiwi', cn: '奇異果' },
-    { en: 'Melon', cn: '哈密瓜' }, { en: 'Pear', cn: '梨子' }, { en: 'Papaya', cn: '木瓜' },
-    { en: 'Plum', cn: '李子' }, { en: 'Coconut', cn: '椰子' }, { en: 'Avocado', cn: '酪梨' },
-    { en: 'Blueberry', cn: '藍莓' }, { en: 'Lime', cn: '萊姆' }, { en: 'Durian', cn: '榴槤' },
-    { en: 'Fig', cn: '無花果' }, { en: 'Guava', cn: '芭樂' }, { en: 'Lychee', cn: '荔枝' },
-    { en: 'Pomegranate', cn: '石榴' }
-  ],
-  colors: [
-    { en: 'Red', cn: '紅色' }, { en: 'Blue', cn: '藍色' }, { en: 'Green', cn: '綠色' },
-    { en: 'Yellow', cn: '黃色' }, { en: 'Orange', cn: '橘色' }, { en: 'Purple', cn: '紫色' },
-    { en: 'Pink', cn: '粉紅' }, { en: 'Black', cn: '黑色' }, { en: 'White', cn: '白色' },
-    { en: 'Gray', cn: '灰色' }, { en: 'Brown', cn: '棕色' }, { en: 'Gold', cn: '金色' },
-    { en: 'Silver', cn: '銀色' }, { en: 'Beige', cn: '米色' }, { en: 'Navy', cn: '深藍' },
-    { en: 'Teal', cn: '青色' }, { en: 'Maroon', cn: '紅褐' }, { en: 'Indigo', cn: '靛色' },
-    { en: 'Cyan', cn: '青色' }, { en: 'Magenta', cn: '洋紅' }, { en: 'Olive', cn: '橄欖綠' },
-    { en: 'Coral', cn: '珊瑚紅' }, { en: 'Turquoise', cn: '綠松石' }, { en: 'Lavender', cn: '薰衣草' }
-  ],
-  numbers: Array.from({ length: 75 }, (_, i) => ({ en: `${i + 1}`, cn: `${i + 1}` }))
-};
-
-// --- 工具函數 Helper Functions ---
-const shuffleArray = (array) => {
-  const newArray = [...array];
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-  }
-  return newArray;
-};
-
-const speakText = (text) => {
-  if ('speechSynthesis' in window) {
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'en-US';
-    utterance.rate = 0.9;
-    window.speechSynthesis.speak(utterance);
-  }
-};
-
-// --- 組件 Components ---
-
-export default function App() {
-  const [category, setCategory] = useState('animals');
-  const [grid, setGrid] = useState([]);
-  const [marked, setMarked] = useState(Array(25).fill(false));
-  const [drawnItems, setDrawnItems] = useState([]);
-  const [currentDraw, setCurrentDraw] = useState(null);
-  const [bingo, setBingo] = useState(false);
-  const [displayMode, setDisplayMode] = useState('both'); // 'en', 'cn', 'both'
-  const [gameMode, setGameMode] = useState('solo'); // 'solo' (auto draw), 'card' (just card)
-
-  // 初始化遊戲 Initialize Game
-  const initGame = useCallback(() => {
-    let items = [...VOCAB_DATA[category]];
-    
-    // 如果單字不夠 24 個 (扣掉中間 Free)，就重複補齊 (這在小數據庫時很有用)
-    while (items.length < 24) {
-      items = [...items, ...VOCAB_DATA[category]];
-    }
-
-    const shuffled = shuffleArray(items).slice(0, 24);
-    
-    // 插入中間的 FREE 格子
-    const boardItems = [
-      ...shuffled.slice(0, 12),
-      { en: 'FREE', cn: '免費', isFree: true },
-      ...shuffled.slice(12, 24)
-    ];
-
-    setGrid(boardItems);
-    
-    // 初始化標記，中間 FREE 預設已標記
-    const initialMarked = Array(25).fill(false);
-    initialMarked[12] = true; 
-    setMarked(initialMarked);
-
-    setDrawnItems([]);
-    setCurrentDraw(null);
-    setBingo(false);
-  }, [category]);
-
-  useEffect(() => {
-    initGame();
-  }, [initGame]);
-
-  // 檢查勝利條件 Check Win
-  useEffect(() => {
-    const lines = [
-      [0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14], [15, 16, 17, 18, 19], [20, 21, 22, 23, 24], // Rows
-      [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24], // Cols
-      [0, 6, 12, 18, 24], [4, 8, 12, 16, 20] // Diagonals
-    ];
-
-    const isBingo = lines.some(line => line.every(index => marked[index]));
-    if (isBingo && !bingo) {
-      setBingo(true);
-      // Play a sound or visual effect here if desired
-    }
-  }, [marked, bingo]);
-
-  // 點擊格子
-  const handleCellClick = (index) => {
-    // 只有在非 Solo 模式，或是該格子內容已經被抽中時才能點 (嚴格模式)，
-    // 但為了樂趣，我們允許玩家自由標記，或者做成"聽音辨位"
-    
-    const newMarked = [...marked];
-    newMarked[index] = !newMarked[index];
-    setMarked(newMarked);
-    
-    // 朗讀點擊的單字
-    if (!marked[index] && !grid[index].isFree) {
-       speakText(grid[index].en);
-    }
-  };
-
-  // 抽牌 (莊家功能)
-  const drawNext = () => {
-    if (bingo) return;
-
-    // 找出還沒被抽過的單字
-    // 為了簡化，我們的"抽牌池"是整個類別的單字，而不僅僅是卡片上的
-    // 這樣比較真實，因為賓果球通常比卡片格子多
-    const pool = VOCAB_DATA[category].filter(item => 
-      !drawnItems.some(drawn => drawn.en === item.en)
-    );
-
-    if (pool.length === 0) {
-      alert("所有單字都抽完了！");
-      return;
-    }
-
-    const randomItem = pool[Math.floor(Math.random() * pool.length)];
-    
-    setDrawnItems(prev => [randomItem, ...prev]);
-    setCurrentDraw(randomItem);
-    speakText(randomItem.en);
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-indigo-100">
-      
-      {/* 頂部導航 */}
-      <header className="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Grid3X3 className="w-8 h-8 text-yellow-300" />
-            <h1 className="text-2xl font-bold tracking-wider">雙語賓果 BINGO</h1>
-          </div>
-          
-          <div className="flex flex-wrap items-center justify-center gap-3 text-sm">
-             {/* 類別選擇 */}
-             <div className="flex bg-indigo-700 rounded-lg p-1">
-              {Object.keys(VOCAB_DATA).map(key => (
-                <button
-                  key={key}
-                  onClick={() => setCategory(key)}
-                  className={`px-3 py-1 rounded-md transition-all capitalize ${
-                    category === key ? 'bg-white text-indigo-700 font-bold shadow-sm' : 'text-indigo-200 hover:text-white'
-                  }`}
-                >
-                  {key === 'animals' ? '動物' : key === 'fruits' ? '水果' : key === 'colors' ? '顏色' : '數字'}
-                </button>
-              ))}
-            </div>
-
-            {/* 語言顯示模式 */}
-            <button 
-              onClick={() => setDisplayMode(prev => prev === 'both' ? 'en' : prev === 'en' ? 'cn' : 'both')}
-              className="flex items-center gap-1 bg-indigo-500 hover:bg-indigo-400 px-3 py-1.5 rounded-full transition-colors"
-              title="切換顯示語言"
-            >
-              <Languages size={16} />
-              <span>{displayMode === 'both' ? '雙語' : displayMode === 'en' ? '英文' : '中文'}</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto p-4 md:p-6 space-y-8">
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中英文雙語賓果 (Bilingual Bingo)</title>
+    <!-- 引入 Tailwind CSS (快速樣式庫) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Lucide Icons (圖標庫) -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; }
         
-        {/* 控制區 & 抽牌顯示 */}
-        <section className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <div className="flex flex-col md:flex-row gap-8 items-center justify-between">
-            
-            {/* 左側：操作按鈕 */}
-            <div className="flex flex-col gap-3 w-full md:w-auto">
-               <button 
-                onClick={drawNext}
-                disabled={bingo}
-                className={`flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-lg shadow-md transition-all transform active:scale-95 ${
-                  bingo ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-400 text-white shadow-amber-200'
-                }`}
-              >
-                <Play fill="currentColor" /> 抽下一個 (Draw)
-              </button>
-
-              <button 
-                onClick={initGame}
-                className="flex items-center justify-center gap-2 px-6 py-2 rounded-lg font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
-              >
-                <RotateCcw size={18} /> 重新開始
-              </button>
-            </div>
-
-            {/* 中間：目前抽到的單字 */}
-            <div className="flex-1 w-full flex flex-col items-center">
-              <div className="text-sm text-slate-400 font-medium mb-2 uppercase tracking-wide">Current Call</div>
-              {currentDraw ? (
-                <div className="flex flex-col items-center animate-bounce-short">
-                  <span className="text-5xl md:text-6xl font-black text-indigo-600 mb-1">{currentDraw.en}</span>
-                  <span className="text-2xl text-slate-500 font-medium">{currentDraw.cn}</span>
-                  <button 
-                    onClick={() => speakText(currentDraw.en)}
-                    className="mt-2 p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors"
-                  >
-                    <Volume2 size={24} />
-                  </button>
-                </div>
-              ) : (
-                <div className="h-24 flex items-center justify-center text-slate-300 italic">
-                  點擊「抽下一個」開始遊戲
-                </div>
-              )}
-            </div>
-
-            {/* 右側：歷史記錄 (最近3個) */}
-            <div className="hidden md:flex flex-col gap-2 w-48 opacity-70">
-              <span className="text-xs font-bold text-slate-400 uppercase">History</span>
-              {drawnItems.slice(1, 4).map((item, idx) => (
-                <div key={idx} className="flex justify-between items-center bg-slate-50 px-3 py-2 rounded border border-slate-100">
-                  <span className="font-semibold text-slate-700">{item.en}</span>
-                  <span className="text-xs text-slate-500">{item.cn}</span>
-                </div>
-              ))}
-            </div>
-
-          </div>
-        </section>
-
-        {/* 賓果卡片區 */}
-        <section className="relative">
-          {bingo && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
-              <div className="bg-yellow-400/90 text-yellow-900 px-12 py-6 rounded-3xl shadow-2xl transform rotate-3 animate-pulse border-4 border-white backdrop-blur-sm">
-                <div className="flex items-center gap-4 text-6xl font-black">
-                  <Trophy size={64} /> BINGO!
-                </div>
-                <p className="text-center font-bold mt-2 text-lg">恭喜你連成一線！</p>
-              </div>
-            </div>
-          )}
-
-          <div className="grid grid-cols-5 gap-2 md:gap-3 max-w-lg mx-auto bg-indigo-900 p-3 md:p-4 rounded-2xl shadow-xl">
-            {/* Header Row (B I N G O) */}
-            {['B', 'I', 'N', 'G', 'O'].map(letter => (
-              <div key={letter} className="text-center text-yellow-400 font-black text-2xl md:text-3xl py-1 md:py-2">
-                {letter}
-              </div>
-            ))}
-
-            {/* Grid Cells */}
-            {grid.map((item, index) => {
-              const isMarked = marked[index];
-              const isFree = item.isFree;
-
-              return (
-                <div
-                  key={index}
-                  onClick={() => handleCellClick(index)}
-                  className={`
-                    aspect-square flex flex-col items-center justify-center text-center p-1 rounded-lg cursor-pointer transition-all duration-200 relative overflow-hidden select-none
-                    ${isFree 
-                      ? 'bg-yellow-400 text-yellow-900 border-4 border-yellow-200' 
-                      : isMarked 
-                        ? 'bg-indigo-500 text-white shadow-inner scale-95 opacity-90' 
-                        : 'bg-white text-slate-700 hover:bg-indigo-50 shadow-md hover:-translate-y-1'
-                    }
-                  `}
-                >
-                  {isMarked && !isFree && (
-                    <div className="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
-                      <div className="w-16 h-16 bg-red-500 rounded-full blur-xl"></div>
-                    </div>
-                  )}
-
-                  {isMarked && (
-                     <div className="absolute top-1 right-1 text-white/50">
-                        <Check size={14} strokeWidth={4} />
-                     </div>
-                  )}
-
-                  {isFree ? (
-                    <>
-                      <Star fill="currentColor" className="w-8 h-8 md:w-10 md:h-10 mb-1" />
-                      <span className="text-xs font-black tracking-widest">FREE</span>
-                    </>
-                  ) : (
-                    <>
-                      {/* Primary Text */}
-                      <span className={`font-bold leading-tight ${
-                        item.en.length > 8 ? 'text-xs md:text-sm' : 'text-sm md:text-lg'
-                      } ${(displayMode === 'cn') ? 'hidden' : 'block'}`}>
-                        {item.en}
-                      </span>
-                      
-                      {/* Secondary Text */}
-                      <span className={`text-xs mt-0.5 leading-tight opacity-80 ${
-                        (displayMode === 'en') ? 'hidden' : 'block'
-                      }`}>
-                        {item.cn}
-                      </span>
-                    </>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* 遊戲說明 */}
-        <section className="text-center text-slate-400 text-sm max-w-2xl mx-auto pb-8">
-          <p>遊戲規則：點擊「抽下一個」，聽到或看到單字後，在下方卡片中找到並點擊標記。連成一條線（橫、直、斜）即獲勝！</p>
-        </section>
-      </main>
-
-      {/* CSS for custom bounce animation */}
-      <style>{`
+        /* 彈跳動畫 */
         @keyframes bounce-short {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
         }
         .animate-bounce-short {
-          animation: bounce-short 0.5s ease-in-out;
+            animation: bounce-short 0.5s ease-in-out;
         }
-      `}</style>
-    </div>
-  );
-}
+
+        /* 賓果贏得勝利時的動畫 */
+        @keyframes pulse-gold {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); }
+            50% { box-shadow: 0 0 0 20px rgba(250, 204, 21, 0); }
+        }
+        .bingo-celebration {
+            animation: pulse-gold 2s infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <!-- 頂部導航 -->
+    <header class="bg-indigo-600 text-white p-4 shadow-lg sticky top-0 z-10">
+        <div class="max-w-4xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <i data-lucide="grid-3x3" class="w-8 h-8 text-yellow-300"></i>
+                <h1 class="text-2xl font-bold tracking-wider">雙語賓果 BINGO</h1>
+            </div>
+            
+            <div class="flex flex-wrap items-center justify-center gap-3 text-sm">
+                <!-- 類別選擇 -->
+                <div class="flex bg-indigo-700 rounded-lg p-1" id="category-buttons">
+                    <!-- JS 會自動生成按鈕 -->
+                </div>
+
+                <!-- 語言顯示模式 -->
+                <button id="lang-toggle" class="flex items-center gap-1 bg-indigo-500 hover:bg-indigo-400 px-3 py-1.5 rounded-full transition-colors">
+                    <i data-lucide="languages" size="16"></i>
+                    <span id="lang-text">雙語</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主內容 -->
+    <main class="flex-grow max-w-4xl mx-auto p-4 md:p-6 space-y-8 w-full">
+        
+        <!-- 控制區 & 抽牌顯示 -->
+        <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 relative overflow-hidden">
+            <div class="flex flex-col md:flex-row gap-8 items-center justify-between relative z-10">
+                
+                <!-- 左側：操作按鈕 -->
+                <div class="flex flex-col gap-3 w-full md:w-auto">
+                    <button id="draw-btn" class="flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-lg shadow-md transition-all transform active:scale-95 bg-amber-500 hover:bg-amber-400 text-white shadow-amber-200">
+                        <i data-lucide="play" fill="currentColor"></i> 抽下一個 (Draw)
+                    </button>
+
+                    <button id="reset-btn" class="flex items-center justify-center gap-2 px-6 py-2 rounded-lg font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors">
+                        <i data-lucide="rotate-ccw" size="18"></i> 重新開始
+                    </button>
+                </div>
+
+                <!-- 中間：目前抽到的單字 -->
+                <div class="flex-1 w-full flex flex-col items-center justify-center min-h-[120px]" id="current-draw-container">
+                    <div class="text-sm text-slate-400 font-medium mb-2 uppercase tracking-wide">Current Call</div>
+                    <!-- 內容由 JS 填充 -->
+                    <div id="draw-placeholder" class="text-slate-300 italic">點擊「抽下一個」開始遊戲</div>
+                    <div id="draw-content" class="hidden flex flex-col items-center animate-bounce-short">
+                        <span id="draw-en" class="text-5xl md:text-6xl font-black text-indigo-600 mb-1"></span>
+                        <span id="draw-cn" class="text-2xl text-slate-500 font-medium"></span>
+                        <button onclick="replayAudio()" class="mt-2 p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors">
+                            <i data-lucide="volume-2" size="24"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 右側：歷史記錄 -->
+                <div class="hidden md:flex flex-col gap-2 w-48 opacity-70">
+                    <span class="text-xs font-bold text-slate-400 uppercase">History</span>
+                    <div id="history-list" class="space-y-2">
+                        <!-- JS 填充 -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 賓果卡片區 -->
+        <section class="relative">
+            <!-- 勝利覆蓋層 -->
+            <div id="winner-overlay" class="hidden absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+                <div class="bg-yellow-400/95 text-yellow-900 px-12 py-6 rounded-3xl shadow-2xl transform rotate-3 bingo-celebration border-4 border-white backdrop-blur-sm">
+                    <div class="flex items-center gap-4 text-6xl font-black">
+                        <i data-lucide="trophy" size="64"></i> BINGO!
+                    </div>
+                    <p class="text-center font-bold mt-2 text-lg">恭喜你連成一線！</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-5 gap-2 md:gap-3 max-w-lg mx-auto bg-indigo-900 p-3 md:p-4 rounded-2xl shadow-xl">
+                <!-- Header Row -->
+                <div class="text-center text-yellow-400 font-black text-2xl md:text-3xl py-1">B</div>
+                <div class="text-center text-yellow-400 font-black text-2xl md:text-3xl py-1">I</div>
+                <div class="text-center text-yellow-400 font-black text-2xl md:text-3xl py-1">N</div>
+                <div class="text-center text-yellow-400 font-black text-2xl md:text-3xl py-1">G</div>
+                <div class="text-center text-yellow-400 font-black text-2xl md:text-3xl py-1">O</div>
+
+                <!-- Grid Cells (由 JS 生成) -->
+                <div id="bingo-grid" class="contents"></div>
+            </div>
+        </section>
+        
+        <section class="text-center text-slate-400 text-sm pb-8">
+            <p>遊戲規則：點擊「抽下一個」，並在卡片中標記對應的單字。連成一線即獲勝！</p>
+        </section>
+    </main>
+
+    <!-- Javascript 邏輯 -->
+    <script>
+        // --- 1. 資料庫 (Data) ---
+        const VOCAB_DATA = {
+            animals: [
+                { en: 'Cat', cn: '貓' }, { en: 'Dog', cn: '狗' }, { en: 'Elephant', cn: '大象' },
+                { en: 'Lion', cn: '獅子' }, { en: 'Tiger', cn: '老虎' }, { en: 'Bear', cn: '熊' },
+                { en: 'Rabbit', cn: '兔子' }, { en: 'Monkey', cn: '猴子' }, { en: 'Panda', cn: '熊貓' },
+                { en: 'Giraffe', cn: '長頸鹿' }, { en: 'Zebra', cn: '斑馬' }, { en: 'Horse', cn: '馬' },
+                { en: 'Cow', cn: '牛' }, { en: 'Pig', cn: '豬' }, { en: 'Sheep', cn: '綿羊' },
+                { en: 'Chicken', cn: '雞' }, { en: 'Duck', cn: '鴨' }, { en: 'Snake', cn: '蛇' },
+                { en: 'Fish', cn: '魚' }, { en: 'Bird', cn: '鳥' }, { en: 'Turtle', cn: '烏龜' },
+                { en: 'Fox', cn: '狐狸' }, { en: 'Wolf', cn: '狼' }, { en: 'Deer', cn: '鹿' },
+                { en: 'Frog', cn: '青蛙' }
+            ],
+            fruits: [
+                { en: 'Apple', cn: '蘋果' }, { en: 'Banana', cn: '香蕉' }, { en: 'Orange', cn: '柳橙' },
+                { en: 'Grape', cn: '葡萄' }, { en: 'Lemon', cn: '檸檬' }, { en: 'Peach', cn: '桃子' },
+                { en: 'Mango', cn: '芒果' }, { en: 'Pineapple', cn: '鳳梨' }, { en: 'Watermelon', cn: '西瓜' },
+                { en: 'Strawberry', cn: '草莓' }, { en: 'Cherry', cn: '櫻桃' }, { en: 'Kiwi', cn: '奇異果' },
+                { en: 'Melon', cn: '哈密瓜' }, { en: 'Pear', cn: '梨子' }, { en: 'Papaya', cn: '木瓜' },
+                { en: 'Plum', cn: '李子' }, { en: 'Coconut', cn: '椰子' }, { en: 'Avocado', cn: '酪梨' },
+                { en: 'Blueberry', cn: '藍莓' }, { en: 'Lime', cn: '萊姆' }, { en: 'Guava', cn: '芭樂' }
+            ],
+            colors: [
+                { en: 'Red', cn: '紅色' }, { en: 'Blue', cn: '藍色' }, { en: 'Green', cn: '綠色' },
+                { en: 'Yellow', cn: '黃色' }, { en: 'Orange', cn: '橘色' }, { en: 'Purple', cn: '紫色' },
+                { en: 'Pink', cn: '粉紅' }, { en: 'Black', cn: '黑色' }, { en: 'White', cn: '白色' },
+                { en: 'Gray', cn: '灰色' }, { en: 'Brown', cn: '棕色' }, { en: 'Gold', cn: '金色' },
+                { en: 'Silver', cn: '銀色' }, { en: 'Beige', cn: '米色' }, { en: 'Navy', cn: '深藍' },
+                { en: 'Teal', cn: '青色' }, { en: 'Maroon', cn: '紅褐' }, { en: 'Indigo', cn: '靛色' },
+                { en: 'Cyan', cn: '青色' }, { en: 'Magenta', cn: '洋紅' }, { en: 'Olive', cn: '橄欖綠' }
+            ],
+            numbers: Array.from({ length: 75 }, (_, i) => ({ en: `${i + 1}`, cn: `${i + 1}` }))
+        };
+
+        // --- 2. 狀態變數 (State) ---
+        let currentState = {
+            category: 'animals',
+            displayMode: 'both', // 'both', 'en', 'cn'
+            grid: [],
+            marked: Array(25).fill(false),
+            drawnItems: [],
+            currentDraw: null,
+            bingo: false
+        };
+
+        // --- 3. 核心功能 (Functions) ---
+
+        // 洗牌算法
+        function shuffleArray(array) {
+            const newArray = [...array];
+            for (let i = newArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
+            }
+            return newArray;
+        }
+
+        // 語音朗讀
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                // 取消當前發音，避免堆疊
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-US';
+                utterance.rate = 0.9;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function replayAudio() {
+            if (currentState.currentDraw) {
+                speakText(currentState.currentDraw.en);
+            }
+        }
+
+        // 初始化遊戲
+        function initGame() {
+            const categoryData = VOCAB_DATA[currentState.category];
+            let items = [...categoryData];
+
+            // 確保有足夠的單字
+            while (items.length < 24) {
+                items = [...items, ...categoryData];
+            }
+
+            const shuffled = shuffleArray(items).slice(0, 24);
+
+            // 構建 Grid，中間插入 FREE
+            currentState.grid = [
+                ...shuffled.slice(0, 12),
+                { en: 'FREE', cn: '免費', isFree: true },
+                ...shuffled.slice(12, 24)
+            ];
+
+            // 重置標記，中間預設已標記
+            currentState.marked = Array(25).fill(false);
+            currentState.marked[12] = true;
+
+            currentState.drawnItems = [];
+            currentState.currentDraw = null;
+            currentState.bingo = false;
+
+            renderUI();
+        }
+
+        // 檢查勝利
+        function checkWin() {
+            const lines = [
+                [0, 1, 2, 3, 4], [5, 6, 7, 8, 9], [10, 11, 12, 13, 14], [15, 16, 17, 18, 19], [20, 21, 22, 23, 24], // Rows
+                [0, 5, 10, 15, 20], [1, 6, 11, 16, 21], [2, 7, 12, 17, 22], [3, 8, 13, 18, 23], [4, 9, 14, 19, 24], // Cols
+                [0, 6, 12, 18, 24], [4, 8, 12, 16, 20] // Diagonals
+            ];
+
+            const isBingo = lines.some(line => line.every(index => currentState.marked[index]));
+            
+            if (isBingo && !currentState.bingo) {
+                currentState.bingo = true;
+                document.getElementById('winner-overlay').classList.remove('hidden');
+                speakText("Bingo! Congratulations!");
+                updateDrawButtonState();
+            }
+        }
+
+        // 處理格子點擊
+        function handleCellClick(index) {
+            if (currentState.bingo) return;
+
+            currentState.marked[index] = !currentState.marked[index];
+            
+            // 點擊發音 (如果是非 Free 格子且剛標記)
+            if (currentState.marked[index] && !currentState.grid[index].isFree) {
+                 speakText(currentState.grid[index].en);
+            }
+
+            renderGrid(); // 只重新渲染網格
+            checkWin();
+        }
+
+        // 抽牌
+        function drawNext() {
+            if (currentState.bingo) return;
+
+            // 從該類別的所有單字中，排除已經抽過的
+            const pool = VOCAB_DATA[currentState.category].filter(item => 
+                !currentState.drawnItems.some(drawn => drawn.en === item.en)
+            );
+
+            if (pool.length === 0) {
+                alert("所有單字都抽完了！");
+                return;
+            }
+
+            const randomItem = pool[Math.floor(Math.random() * pool.length)];
+            
+            currentState.drawnItems.unshift(randomItem); // 加到開頭
+            currentState.currentDraw = randomItem;
+            
+            speakText(randomItem.en);
+            
+            renderCurrentDrawArea();
+            renderHistory();
+        }
+
+        // --- 4. 渲染 UI (Rendering) ---
+        
+        // 渲染類別按鈕
+        function renderCategoryButtons() {
+            const container = document.getElementById('category-buttons');
+            container.innerHTML = '';
+            
+            const labels = { animals: '動物', fruits: '水果', colors: '顏色', numbers: '數字' };
+
+            Object.keys(VOCAB_DATA).forEach(key => {
+                const btn = document.createElement('button');
+                btn.className = `px-3 py-1 rounded-md transition-all capitalize ${
+                    currentState.category === key 
+                    ? 'bg-white text-indigo-700 font-bold shadow-sm' 
+                    : 'text-indigo-200 hover:text-white'
+                }`;
+                btn.textContent = labels[key] || key;
+                btn.onclick = () => {
+                    currentState.category = key;
+                    initGame();
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        // 渲染中間抽牌區
+        function renderCurrentDrawArea() {
+            const placeholder = document.getElementById('draw-placeholder');
+            const content = document.getElementById('draw-content');
+            const enText = document.getElementById('draw-en');
+            const cnText = document.getElementById('draw-cn');
+
+            if (currentState.currentDraw) {
+                placeholder.classList.add('hidden');
+                content.classList.remove('hidden');
+                
+                // 重新觸發動畫
+                content.classList.remove('animate-bounce-short');
+                void content.offsetWidth; // trigger reflow
+                content.classList.add('animate-bounce-short');
+
+                enText.textContent = currentState.currentDraw.en;
+                cnText.textContent = currentState.currentDraw.cn;
+            } else {
+                placeholder.classList.remove('hidden');
+                content.classList.add('hidden');
+            }
+        }
+
+        // 渲染歷史紀錄
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            list.innerHTML = '';
+            // 顯示最近的 3 個 (排除當前顯示的第 0 個)
+            currentState.drawnItems.slice(1, 4).forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'flex justify-between items-center bg-slate-50 px-3 py-2 rounded border border-slate-100';
+                div.innerHTML = `
+                    <span class="font-semibold text-slate-700">${item.en}</span>
+                    <span class="text-xs text-slate-500">${item.cn}</span>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        // 渲染賓果網格
+        function renderGrid() {
+            const gridContainer = document.getElementById('bingo-grid');
+            gridContainer.innerHTML = '';
+
+            currentState.grid.forEach((item, index) => {
+                const isMarked = currentState.marked[index];
+                const isFree = item.isFree;
+                
+                const cell = document.createElement('div');
+                
+                // 動態決定 Class
+                let className = 'aspect-square flex flex-col items-center justify-center text-center p-1 rounded-lg cursor-pointer transition-all duration-200 relative overflow-hidden select-none ';
+                
+                if (isFree) {
+                    className += 'bg-yellow-400 text-yellow-900 border-4 border-yellow-200';
+                } else if (isMarked) {
+                    className += 'bg-indigo-500 text-white shadow-inner scale-95 opacity-90';
+                } else {
+                    className += 'bg-white text-slate-700 hover:bg-indigo-50 shadow-md hover:-translate-y-1';
+                }
+                
+                cell.className = className;
+                cell.onclick = () => handleCellClick(index);
+
+                // 內容 HTML
+                let contentHTML = '';
+                
+                if (isFree) {
+                    contentHTML = `
+                        <i data-lucide="star" fill="currentColor" class="w-8 h-8 md:w-10 md:h-10 mb-1"></i>
+                        <span class="text-xs font-black tracking-widest">FREE</span>
+                    `;
+                } else {
+                    // 控制語言顯示
+                    const showEn = currentState.displayMode === 'both' || currentState.displayMode === 'en';
+                    const showCn = currentState.displayMode === 'both' || currentState.displayMode === 'cn';
+
+                    contentHTML += `<span class="font-bold leading-tight ${item.en.length > 8 ? 'text-xs md:text-sm' : 'text-sm md:text-lg'} ${!showEn ? 'hidden' : 'block'}">${item.en}</span>`;
+                    contentHTML += `<span class="text-xs mt-0.5 leading-tight opacity-80 ${!showCn ? 'hidden' : 'block'}">${item.cn}</span>`;
+                    
+                    // 標記勾勾
+                    if (isMarked) {
+                         contentHTML += `<div class="absolute top-1 right-1 text-white/50"><i data-lucide="check" size="14" stroke-width="4"></i></div>`;
+                    }
+                }
+
+                cell.innerHTML = contentHTML;
+                gridContainer.appendChild(cell);
+            });
+            
+            // 重新初始化圖標
+            lucide.createIcons();
+        }
+
+        function updateDrawButtonState() {
+            const btn = document.getElementById('draw-btn');
+            if (currentState.bingo) {
+                btn.disabled = true;
+                btn.className = 'flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-lg shadow-md bg-slate-200 text-slate-400 cursor-not-allowed';
+            } else {
+                btn.disabled = false;
+                btn.className = 'flex items-center justify-center gap-2 px-8 py-4 rounded-xl font-bold text-lg shadow-md transition-all transform active:scale-95 bg-amber-500 hover:bg-amber-400 text-white shadow-amber-200';
+            }
+        }
+
+        function updateLangButton() {
+            const text = document.getElementById('lang-text');
+            const map = { 'both': '雙語', 'en': '英文', 'cn': '中文' };
+            text.textContent = map[currentState.displayMode];
+            renderGrid(); // 重新渲染格子文字
+        }
+
+        // 主渲染函數
+        function renderUI() {
+            renderCategoryButtons();
+            renderCurrentDrawArea();
+            renderHistory();
+            renderGrid();
+            updateDrawButtonState();
+            
+            // 隱藏贏家畫面
+            if (!currentState.bingo) {
+                document.getElementById('winner-overlay').classList.add('hidden');
+            }
+            
+            // 初始化圖標
+            lucide.createIcons();
+        }
+
+        // --- 5. 事件監聽 (Event Listeners) ---
+        
+        document.getElementById('draw-btn').addEventListener('click', drawNext);
+        
+        document.getElementById('reset-btn').addEventListener('click', initGame);
+        
+        document.getElementById('lang-toggle').addEventListener('click', () => {
+            const modes = ['both', 'en', 'cn'];
+            const nextIndex = (modes.indexOf(currentState.displayMode) + 1) % modes.length;
+            currentState.displayMode = modes[nextIndex];
+            updateLangButton();
+        });
+
+        // 啟動遊戲
+        initGame();
+
+    </script>
+</body>
+</html>
